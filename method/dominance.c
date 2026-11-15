@@ -1,17 +1,7 @@
 #include <stdlib.h>
+#include "dominance.h"
 
-//List <w,p> to store the situation
-//For <w,p> & <w',p'>
-//If w<=w' & p>=p', and at least one inequality sign is  strict, we call it <w,p> dominates <w',p'>
-//In list[1~n], list[i].weight < list[j].weight for every i<j, and no node dominates the other
-//Weight of any node is less than c
-typedef struct 
-{
-    int weight;
-    int price;
-}node;
-
-node* merge(node* L1,int n1,node* L2,int n2,int* n3)
+static node* merge(node* L1,int n1,node* L2,int n2,int* n3)
 {
     int r=0;
     node* result=(node*)malloc(sizeof(node)*(n1+n2+1));
@@ -54,19 +44,21 @@ node* merge(node* L1,int n1,node* L2,int n2,int* n3)
 
 int dpwithlist(int n,int c,int* price,int* weight)
 {
-    node* L=(node *)malloc(sizeof(node)*(n+1));
-    L[1].weight=0;
-    L[1].price=0;
-    node* L1=L;
+    node* L1=(node *)malloc(sizeof(node)*(n+1));
+    L1[1].weight=0;
+    L1[1].price=0;
     int n1=1;
 
+    //i means using item 1~i to construct the list
     for (int i=1;i<=n;i++)
     {
         node* l=(node*)malloc(sizeof(node)*(n1+1));
         int n2=0;
 
+        //situation: use item number i
         for (int j=1;j<=n1;j++)
         {
+            //exceed the capacity, break
             if (L1[j].weight + weight[i] > c)
                 break;
 
@@ -74,8 +66,13 @@ int dpwithlist(int n,int c,int* price,int* weight)
             l[n2].weight = L1[j].weight + weight[i];
         }
 
+        //To constuct possible state of level i, there are two cases
+        //case 1: using prior (i-1) item
+        //case 2: using item i
         int n3;
         node* L3=merge(L1,n1,l,n2,&n3);
+
+        //update list from level i-1 to i
         free(L1);
         L1=L3;
         n1=n3;

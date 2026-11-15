@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "method/base.h"
+#include "method/dominance.h"
 int main()
 {
     int n,c;
@@ -13,6 +14,9 @@ int main()
         scanf("%d %d",price+i,weight+i);
 
     int result=base(n,c,price,weight);
+    printf("%d\n",result);
+
+    result=dpwithlist(n,c,price,weight);
     printf("%d",result);
 
     free(price);
