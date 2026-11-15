@@ -11,4 +11,6 @@ typedef struct
     int price;
 }node;
 
+node* merge(node* L1,int n1,node* L2,int n2,int* n3);
+
 int dpwithlist(int n,int c,int* price,int* weight);

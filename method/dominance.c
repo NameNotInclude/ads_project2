@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include "dominance.h"
 
-static node* merge(node* L1,int n1,node* L2,int n2,int* n3)
+node* merge(node* L1,int n1,node* L2,int n2,int* n3)
 {
     int r=0;
     node* result=(node*)malloc(sizeof(node)*(n1+n2+1));
@@ -49,10 +49,10 @@ int dpwithlist(int n,int c,int* price,int* weight)
     L1[1].price=0;
     int n1=1;
 
+    node* l=(node*)malloc(sizeof(node)*(c+1));
     //i means using item 1~i to construct the list
     for (int i=1;i<=n;i++)
     {
-        node* l=(node*)malloc(sizeof(node)*(n1+1));
         int n2=0;
 
         //situation: use item number i
@@ -76,11 +76,11 @@ int dpwithlist(int n,int c,int* price,int* weight)
         free(L1);
         L1=L3;
         n1=n3;
-        free(l);
     }
 
     int re=L1[n1].price;
     free(L1);
+    free(l);
 
     return re;
 }
