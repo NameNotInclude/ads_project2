@@ -15,29 +15,32 @@ Kellerer / Pferschy / Pisinger *The Knapsack Problems* (2004) **§3.4 DP-with-Li
 ├── method/                 # 各算法实现，一个算法一对 .c/.h
 │   ├── base.c / base.h     # DP-1        二维整表 DP（基线）
 │   ├── dominance.c / .h    # §3.4       DP-with-Lists（状态列表 + 支配剪枝）
-│   └── bounding.c          # §3.5       DP-with-Upper-Bounds（空壳，未实现）
-├── testdata/               # 测试实例：9 个规模 × 3 个数据族 = 27 个文件
+│   └── bounding.c / .h     # §3.5       DP-with-Upper-Bounds（分数背包上界剪枝）
+├── testdata/               # 测试实例：9 个规模 × 3 个数据族，tier09 另有 2 个族 = 29 个文件
 │   └── tierNN_nNN_cNN/
 │       ├── a_uncorr.txt      # 不相关
 │       ├── b_weakcorr.txt    # 弱相关
-│       └── c_strong.txt      # 强相关
+│       └── c_strong.txt      # 强相关（tier09 另有 d_subsetsum / e_smallprofit）
 ├── sh/
-│   ├── complie.sh          # 编译
-│   └── compile_run.sh      # 编译并运行
-├── TestData/               # 空目录（历史遗留，可直接删除）
-└── docs/                   # 参考论文 PDF（被 .gitignore 忽略，不入库）
+│   ├── compile.sh          # 只编译
+│   └── compile_run.sh      # 编译 + 跑完 testdata，结果写进 result/*.csv
+├── visualize/
+│   └── draw.py             # polars + altair 作图，输出 figs/*.pdf 与 figs.html
+├── result/                 # 基准测试产出的 CSV（base / dominance / bound）
+└── report/                 # LaTeX 报告（report.tex）
 ```
 
 ### 1.1 构建与运行
 
 ```bash
-./sh/complie.sh                                  # 生成 ./main
-./main < testdata/tier01_n10_c100/a_uncorr.txt   # 从标准输入读实例
+./sh/compile.sh                                  # 只编译，生成 ./main
+./sh/compile_run.sh 3                            # 编译 + 跑完 testdata（每个实例 3 次）
+./main testdata/tier01_n10_c100/a_uncorr.txt 1   # 单实例：<file> <iter>
 ```
 
-- 编译命令为 `gcc main.c method/base.c method/dominance.c -o main`；
-  `dominance.c` 里的 `#include "dominance.h"` 按**所在目录**解析，无需 `-I`。
-- 目前只从 **stdin** 读数据，尚未支持命令行传文件名（见 §4）。
+- 编译命令为 `gcc main.c method/base.c method/dominance.c method/bounding.c -o main`；
+  各头文件按**所在目录**解析，无需 `-I`。
+- `main` 从**命令行**读实例路径与重复次数，结果追加写入 `result/*.csv`。
 
 ### 1.2 数据文件格式
 
@@ -48,11 +51,12 @@ Kellerer / Pferschy / Pisinger *The Knapsack Problems* (2004) **§3.4 DP-with-Li
 
 ### 1.3 testdata 说明
 
-实例由脚本生成（脚本已丢失，规则如下，待补回，见 §4）：
+实例按下述规则生成（固定随机种子，可复现）：
 
 - 重量上界 `R = max(5, round(4c/n))`，使期望总重量 `Σw ≈ 2c`，
   即容量比 `c/Σw ≈ 0.5`（背包最难的中等紧度区间）；
-- 三个数据族：
+- 三个基础数据族（tier09 额外有 `d_subsetsum.txt`（`p = w`）与
+  `e_smallprofit.txt`（`p` 很小、`Σp ≪ c`））：
 
 | 文件 | 族 | 生成规则 |
 |---|---|---|
@@ -80,7 +84,7 @@ Kellerer / Pferschy / Pisinger *The Knapsack Problems* (2004) **§3.4 DP-with-Li
 
 - 价格/重量数组一律 **1-based**（`price[1..n]`、`weight[1..n]`，下标 0 不用）；
 - 只求最优值，**不保存方案**；
-- 表/状态值用 `int`；`n · max(p_i)` 超过 `2^31−1` 会静默溢出（见 §4）；
+- 表/状态值用 `int`；`n · max(p_i)` 超过 `2^31−1` 会静默溢出；
 - 假设 `w_i ≥ 1` 且为整数。
 
 ### 2.1 `base()` — DP-1（基线）
@@ -93,7 +97,7 @@ P[i][j] = max{ P[i-1][j], P[i-1][j-w_i] + p_i }
 - 时间 `Θ(nc)`，空间 `Θ(nc)`（二维整表）。
 - 缺点：最好情况与最坏情况一样慢——即使大量格子是平台值或不可达，也照样填满。
 - 实现注意：`table[i][0]` 的初始化会读未初始化的 `weight[0]`（当前数据 `w ≥ 1`，
-  结果不受影响，但属于 UB，见 §4）。
+  结果不受影响，但属于 UB。
 
 ### 2.2 `dpwithlist()` — §3.4 DP-with-Lists
 
@@ -157,7 +161,7 @@ B 的四个上界：B ≤ c+1 ，B ≤ Σp+1 ，B ≤ |可达重量和| ，B ≤
 | `Σp ≈ c`、随机实例（即本仓库 testdata） | `≈ c` | **慢 ≈10×** |
 | 强相关 `p = w+10` | `≈ c`（支配几乎失效） | **慢**，需要 §3.5 |
 
-### 2.3 `dpbound()` — §3.5 DP-with-Upper-Bounds（待实现）
+### 2.3 `dpbound()` — §3.5 DP-with-Upper-Bounds
 
 思路：把 §3.4 的列表当成**分支限界树**——状态 `(w,p)` 即「前 j 件已固定」的节点。
 
@@ -188,6 +192,6 @@ B 的四个上界：B ≤ c+1 ，B ≤ Σp+1 ，B ≤ |可达重量和| ，B ≤
 - **随机对拍**：`n ≤ 8, c ≤ 25` 共 200 000 组，与子集枚举暴力比较，
   `base` / 一维滚动 DP / `dpwithlist` **三方答案全部一致**（`0/200000` 错）。
 - **内存检查**：以上对拍在 `-fsanitize=address,undefined` 下无报错。
-- **数据文件**：27 个 `testdata` 实例上三者答案一致。
+- **数据文件**：29 个 `testdata` 实例上三者答案一致。
 
 ---
