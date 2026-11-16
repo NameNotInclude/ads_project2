@@ -1,0 +1,251 @@
+\documentclass[openany]{book}
+\usepackage{ctex}
+\usepackage{graphicx}
+\graphicspath{{../visualize/}{visualize/}}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{geometry}
+\usepackage{float}
+\usepackage{subcaption}
+\geometry{a4paper, margin=1.2cm}
+\setlength{\parskip}{0.5em}
+
+% ===== 代码列表的统一样式 =====
+\lstset{
+    basicstyle=\ttfamily\scriptsize,
+    keywordstyle=\color{blue!80!black},
+    commentstyle=\color{green!45!black},
+    frame=single,
+    rulecolor=\color{gray!60},
+    framesep=3pt,
+    aboveskip=5pt,
+    belowskip=5pt,
+    breaklines=true,
+    columns=flexible,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    showstringspaces=false,
+    tabsize=4,
+    language=Verilog,
+    captionpos=b,
+}
+
+\title{KP背包问题与算法优化}
+
+\begin{document}
+\maketitle
+
+\chapter{引言}
+\section{研究背景}
+KP背包问题（Knapsack Problem）是组合优化中的经典问题，广泛应用于资源分配、投资组合优化等领域。
+本文旨在探讨KP背包问题的基本概念、算法实现及优化策略。
+并复习回顾常用的算法设计方法，如动态规划、贪心算法和分支限界法等。
+
+\section{问题描述}
+KP背包问题可以描述为：给定一个容量为$W$的背包和$n$个物品，每个物品$i$有一个重量$w_i$和一个价值$v_i$，目标是选择若干物品放入背包，使得总重量不超过$W$，且总价值最大化。
+我们想要找到一个算法，在不失正确性的情况下快速地找到问题的最优解，也想要探讨，对于不同的输入数据，不同的算法是否会有不同的性能表现。
+
+\section{数据参数}
+我们选取了多组数据，每组数据的n,c值不同，具体如下：
+\begin{table}[H]
+    \centering
+    \begin{tabular}{|c|c|c|c|c|c|c|c|c|c|}
+        \hline
+        编号 & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 & 9\\
+        \hline
+        n & 10 & 50 & 100 & 200 & 500 & 1000 & 2000 & 2000 & 100\\
+        \hline
+        c & 100 & 500 & 2000 & 10000 & 20000& 50000 & 50000 & 2000 & 200000\\
+        \hline
+    \end{tabular}
+    \caption{数据参数表}
+\end{table}
+对于每组数据，我们都根据质量$w_i$与价值$v_i$之间的相关性，设立三组不同的测试数据：w,p不相关、弱相关以及强相关。详细的关系如下：
+\begin{itemize}
+    \item 不相关：$P \sim U[1,R],W \sim U[1,R]$，两者独立
+    \item 弱相关：$w \sim U[1,R],p \sim U[max(1,w-10), w+10]$
+    \item 强相关：p = w + 10
+\end{itemize}
+
+对于第9组数据，我们还额外设计了两组：分别是w=p，问题退化为能否装到c；以及物体的价值远远小于重量的情况。
+
+\chapter{算法描述}
+\section{基准算法}
+在本次实验当中，我们使用基础的动态规划算法作为Baseline，来与之后的改进算法比较。
+该算法使用了一个二维数组$dp[i][j]$，其中$i$表示前$i$个物品，$j$表示背包容量为$j$时的最大价值。算法的状态转移方程如下：
+\[
+dp[0][j] = 0
+\]
+\[
+dp[i][j] = max\{dp[i-1][j] , dp[i-1][j-w_i] + v_i\}
+\]
+
+这个结论是非常直观的，考虑前$i$物品的最大价值可以分为两种情况：使用第i个和不使用第i个。
+前者的最优解是$dp[i-1][j]$，后者的最优解是$dp[i-1][j-w_i] + v_i$，如此我们就可以据此写出动态规划算法。算法伪代码如下：
+
+\begin{lstlisting}
+func BaseDP:
+    //Input: 
+    //  Number of item: n
+    //  Capacity: c
+    //  List of price: price
+    //  List of weight: weight 
+
+    //Output:
+    //  Optimal value: result
+
+    creat DP[n][c]
+    set DP[i][j]=0 if ij=0
+
+    for i=1 to n do
+        for j=1 to c do
+            //Here we regulat that DP[i][j]=-INF when j<0
+            DP[i][j]=max{DP[i-1][j],DP[i-1][j-weight[i]]+price[i]}
+        end for
+    end for
+
+    result = DP[n][c]
+
+\end{lstlisting}
+
+\section{列表优化}
+在基准算法当中，对于每一个物品，我们都需要完整考虑1~c种情况，而事实上，对固定的i，f(j)=dp[i][j]，在很长一段区间当中，值并不会改变。因此，我们可以只存储值发生改变的拐点，减少空间使用以及优化算法的上限。
+
+为了实现这个功能，对于选取前i个物品的情况，将可能出现的局面写成$<w,p>$，其中$w$代表质量，$p$代表当前的价值。
+对于可能出现的两种情况$<w_1,p_1>$和$<w_2,p_2>$，若$w1 >= w2$且$p1 <= p2$，则$<w_1,p_1>$是一个劣势局面（因为我们可以用更小的容量达到更大的价值），可以直接舍弃。
+我们可以使用一个列表来存储所有的局面，并在每次加入新的局面时进行比较，删除劣势局面。
+
+对于前(i+1)组情况，我们有第i组的列表$L_i$，以及使用了第(i+1)个物品的情况$L_{i'}$，其中$L_{i'}$中的每一个局面都可以由$L_i$中的局面加上第(i+1)个物品得到（删除超过总容量的状态）。我们将这两个列表按照w递增合并，并删除劣势局面，得到新的列表$L_{i+1}$。
+算法的伪代码如下：
+\begin{lstlisting}
+func ListOptimization:
+    //Input: 
+    //  Number of item: n
+    //  Capacity: c
+    //  List of price: price
+    //  List of weight: weight 
+
+    //Output:
+    //  Optimal value: result
+
+    creat list L[0]
+    set L[0] = <0,0>
+
+    for i=1 to n do
+        creat list L'[i]
+        for each <w,p> in L[i-1] do
+            if w + weight[i] <= c then
+                add <w + weight[i], p + price[i]> to L'[i]
+            end if
+        end for
+        merge L'[i] and L[i-1] by w in ascending order
+        delete dominated states in the merged list
+        set L[i] = merged list without dominated states
+    end for
+
+    // The last element in the list has the maximum capacity and the maximum value
+    result = L.last().p  
+
+\end{lstlisting}
+
+\section{上界剪枝}
+在列表优化的基础上，我们可以进一步使用上界剪枝来减少不必要的计算。对于每个局面$<w,p>$，我们可以计算一个上界值，表示在当前局面下，最多还能获得的价值。如果这个上界值小于当前已知的最优解，那么我们可以直接舍弃这个局面，从而减少计算量。
+
+对于初始的最优解，我们可以使用贪心算法得到一个近似值。具体的计算流程如下：
+\begin{lstlisting}
+func GreedOptimal:
+    //Input: 
+    //  Number of item: n
+    //  Capacity: c
+    //  List of price: price
+    //  List of weight: weight 
+
+    //Output:
+    //  Approximate optimal value: z
+
+    sort price and weight accoding to the value per weight of every item, in descending order
+    rest=c
+    z=0
+    for i=1 to n do
+        if rest > weight[k]
+            z+=price[k]
+            rest-=weight[k]
+        end if
+    end for
+\end{lstlisting}
+
+对于上述已经排序好的price,weight列表，我们先算出来前i个物品的质量与价值Wsum[i]，Psum[i]，然后在计算上界时，假设我们可以将剩余容量填满最有价值的物品，从而得到一个上界值。具体的计算方法如下：
+\begin{lstlisting}
+func Bound:
+    //Input: 
+    //  Number of item: n
+    //  Settled item: i
+    //  Rest capacity: r
+    //  List of price: price
+    //  List of weight: weight 
+    //  List of total weight 1~i: Wsum
+    //  List of total value 1~i: Psum
+
+    //Output:
+    //  upper bound: value
+
+    binary search for the largest t in [i,n] with Wsum[t]-Wsum[i] <= r
+
+    rest = r - Wsum[t] + Wsum[i]
+    value = Psum[t] - Psum[i]
+
+    if t != n do
+        value += rest * price[t+1] / weight[t+1]
+\end{lstlisting}
+
+最终算法的伪代码为：
+\begin{lstlisting}
+func BoundOptimization:
+    //Input: 
+    //  Number of item: n
+    //  Capacity: c
+    //  List of price: price
+    //  List of weight: weight 
+
+    //Output:
+    //  Optimal value: result
+
+    z = GreedOptimal(n,c,price,weight)
+
+    construct Wsum[n] & Psum[n]
+
+    creat list L[0]
+    set L[0] = <0,0>
+
+    for i=1 to n do
+        creat list L'[i]
+        for each <w,p> in L[i-1] do
+            if w + weight[i] <= c then
+                add <w + weight[i], p + price[i]> to L'[i]
+            end if
+        end for
+        merge L'[i] and L[i-1] by w in ascending order
+        delete dominated states in the merged list
+        set L[i] = merged list without dominated states
+
+        write_ptr=1
+        for <w_i,p_i> in the merged list do
+            if p > z do
+                z=p
+            end if
+
+            if p + Bound(n,i,c-w,price,weight,Wsum,Psum) > z do
+                L[write_ptr] = <w,p>
+                write_ptr++;
+            end if
+        end for
+
+        update the len of L to write_ptr
+    end for
+
+    // The last element in the list has the maximum capacity and the maximum value
+    result = L.last().p  
+
+\end{lstlisting}
+
+\end{document}
