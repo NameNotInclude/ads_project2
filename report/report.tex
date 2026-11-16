@@ -7,8 +7,31 @@
 \usepackage{geometry}
 \usepackage{float}
 \usepackage{subcaption}
-\geometry{a4paper, margin=1.2cm}
-\setlength{\parskip}{0.5em}
+\usepackage{etoolbox}
+\usepackage{titlesec}
+
+% ===== 版面：页边距稍微放大，正文行距/段距加大，让文字铺满整页 =====
+\geometry{a4paper, margin=1.8cm}
+\linespread{1.25}
+\setlength{\parskip}{0.6em}
+
+% ===== 章节标题：字号缩小、上下间距收紧 =====
+\titleformat{\chapter}[hang]{\normalfont\Large\bfseries}{\thechapter}{0.6em}{}
+\titlespacing*{\chapter}{0pt}{6pt}{10pt}
+\titleformat{\section}[hang]{\normalfont\large\bfseries}{\thesection}{0.6em}{}
+\titlespacing*{\section}{0pt}{10pt}{4pt}
+\titleformat{\subsection}[hang]{\normalfont\normalsize\bfseries}{\thesubsection}{0.6em}{}
+\titlespacing*{\subsection}{0pt}{8pt}{3pt}
+
+% ===== 章节不再强制换页：内容连续排，避免出现大量半空的页面 =====
+\makeatletter
+\patchcmd{\chapter}{\if@openright\cleardoublepage\else\clearpage\fi}{}{}{\typeout{WARN: chapter patch failed}}
+\makeatother
+
+% 标题不要孤零零落在页面最底部（至少留 10 行正文空间）
+\usepackage{needspace}
+\pretocmd{\chapter}{\needspace{10\baselineskip}}{}{}
+\pretocmd{\section}{\needspace{5\baselineskip}}{}{}
 
 % ===== 代码列表的统一样式 =====
 \lstset{
