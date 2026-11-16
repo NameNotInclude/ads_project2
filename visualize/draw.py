@@ -46,6 +46,15 @@ FAMILY = {                                 # 文件名前缀 -> 图例名
     "e_smallprofit": "small profit (Ep << c)",
 }
 FAMILY_ORDER = list(FAMILY.values())
+FAMILY_COLOR = alt.Scale(
+    domain=FAMILY_ORDER,
+    range=["#4C78A8", "#F58518", "#E45756", "#72B7B2", "#54A24B"],
+)
+# 数据点形状同样按数据族（p/w 相关度）区分，避免只靠颜色、也便于黑白打印
+FAMILY_SHAPE = alt.Scale(
+    domain=FAMILY_ORDER,
+    range=["circle", "square", "triangle-up", "diamond", "cross"],
+)
 COMMON_FAMILIES = ["a_uncorr", "b_weakcorr", "c_strong"]
 
 TITLE_FONT = 15
@@ -154,25 +163,28 @@ def save_html(charts: list[alt.Chart], subtitle: str, name: str = "figs") -> Non
 # ---------------------------------------------------------------- 图 1
 def fig1_base_vs_nc(df: pl.DataFrame) -> None:
     """DP-1 的耗时与 n·c 的关系：若是 Θ(nc)，双对数上斜率应 ≈ 1"""
-    d = (
-        df.filter(pl.col("algo") == "base")
-        .group_by(["num_of_item", "capacity", "nc"])
+    raw = df.filter(pl.col("algo") == "base")
+    # 拟合线用各 (n,c) 上跨族的中位数
+    med = (
+        raw.group_by(["num_of_item", "capacity", "nc"])
         .agg(pl.col("aver_time").median().alias("ms"))
         .sort("nc")
     )
-    slope, _, line = loglog_fit(d, "nc", "ms")
+    slope, _, line = loglog_fit(med, "nc", "ms")
 
     points = (
-        alt.Chart(d)
-        .mark_circle(size=110, opacity=0.85, color="#4C78A8")
+        alt.Chart(raw)
+        .mark_point(size=95, filled=True, opacity=0.9)
         .encode(
             x=alt.X("nc:Q", scale=alt.Scale(type="log"), title="n · c  (number of DP cells)"),
-            y=alt.Y("ms:Q", scale=alt.Scale(type="log"), title="time (ms, median)"),
+            y=alt.Y("aver_time:Q", scale=alt.Scale(type="log"), title="time (ms)"),
+            color=alt.Color("family_label:N", scale=FAMILY_COLOR, sort=FAMILY_ORDER, title="data family"),
+            shape=alt.Shape("family_label:N", scale=FAMILY_SHAPE, sort=FAMILY_ORDER, title="data family"),
             tooltip=[
+                alt.Tooltip("family_label:N", title="family"),
                 alt.Tooltip("num_of_item:Q", title="n"),
                 alt.Tooltip("capacity:Q", title="c"),
-                alt.Tooltip("nc:Q", title="n·c"),
-                alt.Tooltip("ms:Q", title="ms", format=".3f"),
+                alt.Tooltip("aver_time:Q", title="ms", format=".3f"),
             ],
         )
     )
@@ -182,7 +194,7 @@ def fig1_base_vs_nc(df: pl.DataFrame) -> None:
         .encode(x="nc:Q", y="ms:Q")
     )
     note = (
-        alt.Chart(pl.DataFrame({"nc": [d["nc"].min()], "ms": [d["ms"].max()]}))
+        alt.Chart(pl.DataFrame({"nc": [med["nc"].min()], "ms": [med["ms"].max()]}))
         .mark_text(align="left", dx=6, dy=-8, fontSize=LABEL_FONT + 1, color="#E45756")
         .encode(x="nc:Q", y="ms:Q", text=alt.value(f"log-log fit slope = {slope:.2f}"))
     )
@@ -191,7 +203,7 @@ def fig1_base_vs_nc(df: pl.DataFrame) -> None:
     return with_title(
         ch,
         "Fig.1  DP-1 runtime vs. n·c",
-        f"median over 3 data families; fitted slope {slope:.2f} (≈1 means Θ(nc))",
+        f"one point per (n, c, data family); dashed line = log-log fit on medians, slope {slope:.2f} (≈1 means Θ(nc))",
     )
 
 
@@ -281,6 +293,7 @@ def fig3_correlation(df: pl.DataFrame) -> None:
             x=alt.X("family_label:N", title="data family", sort=FAMILY_ORDER, axis=alt.Axis(labelAngle=-25)),
             y=alt.Y("ms:Q", scale=alt.Scale(type="log"), title="time (ms, log scale)"),
             color=alt.Color("algo_label:N", scale=ALGO_COLOR, sort=ALGO_ORDER, title=None),
+            shape=alt.Shape("family_label:N", scale=FAMILY_SHAPE, sort=FAMILY_ORDER, title="data family"),
             xOffset=alt.XOffset("algo_label:N", sort=ALGO_ORDER),
             tooltip=[
                 alt.Tooltip("family_label:N", title="family"),
@@ -303,9 +316,9 @@ def fig3_correlation(df: pl.DataFrame) -> None:
 def fig4_speedup(df: pl.DataFrame) -> None:
     """改进算法相对 DP-1 的提升率：>1 更快，<1 更慢"""
     wide = (
-        df.group_by(["tier", "family", "num_of_item", "capacity", "nc", "algo"])
+        df.group_by(["tier", "family", "family_label", "num_of_item", "capacity", "nc", "algo"])
         .agg(pl.col("aver_time").median().alias("ms"))
-        .pivot(on="algo", index=["tier", "family", "num_of_item", "capacity", "nc"], values="ms")
+        .pivot(on="algo", index=["tier", "family", "family_label", "num_of_item", "capacity", "nc"], values="ms")
     )
     wide = wide.filter(
         pl.col("base").is_not_null()
@@ -318,7 +331,7 @@ def fig4_speedup(df: pl.DataFrame) -> None:
 
     long = wide.unpivot(
         on=["DP-with-Lists (3.4)", "DP+Upper-Bound (3.5)"],
-        index=["tier", "family", "num_of_item", "capacity", "nc"],
+        index=["tier", "family", "family_label", "num_of_item", "capacity", "nc"],
         variable_name="algo_label",
         value_name="speedup",
     )
@@ -364,12 +377,13 @@ def fig4_speedup(df: pl.DataFrame) -> None:
     # 提升率 vs n·c（散点，每个 (tier, family) 一个点）
     scat = (
         alt.Chart(long)
-        .mark_circle(size=70, opacity=0.7)
+        .mark_point(size=80, opacity=0.85, filled=True)
         .encode(
             x=alt.X("nc:Q", scale=alt.Scale(type="log"), title="n · c"),
             y=alt.Y("speedup:Q", scale=alt.Scale(type="log"), title="speed-up vs DP-1"),
             color=alt.Color("algo_label:N", sort=ALGO_ORDER, title=None,
                             scale=alt.Scale(domain=ALGO_ORDER[1:], range=["#F58518", "#54A24B"])),
+            shape=alt.Shape("family_label:N", scale=FAMILY_SHAPE, sort=FAMILY_ORDER, title="data family"),
             tooltip=[
                 alt.Tooltip("tier:N"), alt.Tooltip("family:N"),
                 alt.Tooltip("speedup:Q", format=".2f"),
@@ -383,7 +397,7 @@ def fig4_speedup(df: pl.DataFrame) -> None:
     return with_title(
         ch,
         "Fig.4  Improvement over DP-1 (median over data families)",
-        "3.5 wins on almost every instance; 3.4 loses when the frontier stays as large as c (strong correlation / subset sum)",
+        "top: median over families; bottom: one point per (tier, family) — marker shape = data family.\n3.5 wins on almost every instance; 3.4 loses when the frontier stays as large as c (strong correlation / subset sum)",
     )
 
 
@@ -397,17 +411,16 @@ def fig5_tier09(df: pl.DataFrame) -> alt.Chart:
         d.group_by(["family_label", "algo_label"])
         .agg(pl.col("aver_time").median().alias("ms"))
     )
-    fam_scale = alt.Scale(domain=FAMILY_ORDER,
-                          range=["#4C78A8", "#F58518", "#E45756", "#72B7B2", "#54A24B"])
-    lines = (
+    # 折线 + 点在同一层：点用形状区分数据族（颜色 + 形状双编码），悬停显示数值
+    panel_a_base = (
         alt.Chart(prof)
-        .mark_line(point=alt.OverlayMarkDef(size=110, filled=True), strokeWidth=2.2)
+        .mark_line(point=alt.OverlayMarkDef(size=130, filled=True), strokeWidth=2.2)
         .encode(
-            x=alt.X("algo_label:N", sort=ALGO_ORDER, title=None,
-                    axis=alt.Axis(labelAngle=-12)),
+            x=alt.X("algo_label:N", sort=ALGO_ORDER, title=None, axis=alt.Axis(labelAngle=-12)),
             y=alt.Y("ms:Q", scale=alt.Scale(type="log"), title="time (ms, median, log scale)"),
-            color=alt.Color("family_label:N", scale=fam_scale, sort=FAMILY_ORDER, title="data family"),
-            # 蓝/绿（uncorr 与 small profit）、红/青（strong 与 subset sum）几乎重合，用虚线型区分
+            color=alt.Color("family_label:N", scale=FAMILY_COLOR, sort=FAMILY_ORDER, title="data family"),
+            shape=alt.Shape("family_label:N", scale=FAMILY_SHAPE, sort=FAMILY_ORDER, title="data family"),
+            # 蓝/绿（uncorr 与 small profit）、红/青（strong 与 subset sum）几乎重合，再用虚线型区分
             strokeDash=alt.StrokeDash(
                 "family_label:N",
                 scale=alt.Scale(domain=FAMILY_ORDER,
@@ -422,8 +435,9 @@ def fig5_tier09(df: pl.DataFrame) -> alt.Chart:
                 alt.Tooltip("ms:Q", title="ms", format=".4f"),
             ],
         )
-        .properties(width=520, height=350, title=alt.TitleParams(
-            text="(a) absolute runtime on the 5 tier09 families", fontSize=LABEL_FONT + 1, anchor="start")))
+    )
+    panel_a = panel_a_base.properties(width=520, height=350, title=alt.TitleParams(
+        text="(a) absolute runtime on the 5 tier09 families", fontSize=LABEL_FONT + 1, anchor="start"))
 
     # (b) 相对 DP-1 的提升率（>1 更快），同一批数据
     wide = (
@@ -441,7 +455,7 @@ def fig5_tier09(df: pl.DataFrame) -> alt.Chart:
         variable_name="algo_label",
         value_name="speedup",
     )
-    dots = (
+    speed_dots = (
         alt.Chart(speed)
         .mark_point(size=170, filled=True)
         .encode(
@@ -461,13 +475,13 @@ def fig5_tier09(df: pl.DataFrame) -> alt.Chart:
     )
     ref = alt.Chart(pl.DataFrame({"y": [1.0]})).mark_rule(
         strokeDash=[5, 4], color="#777777").encode(y="y:Q")
-    panel_b = (dots + ref).properties(
+    panel_b = (speed_dots + ref).properties(
         width=520, height=350, title=alt.TitleParams(
             text="(b) speed-up vs DP-1 (1 = same, <1 = slower)",
             fontSize=LABEL_FONT + 1, anchor="start"))
 
     # color 必须 independent：否则两个面板的色标会被合并，圆点颜色和左边折线撞色
-    ch = (lines | panel_b).resolve_scale(y="independent", color="independent")
+    ch = (panel_a | panel_b).resolve_scale(y="independent", color="independent")
     return with_title(
         ch,
         "Fig.5  tier09 (n=100, c=200000): the five data families, three algorithms",
