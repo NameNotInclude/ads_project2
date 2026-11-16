@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include "dominance.h"
 
-void swap(int i,int j,double* per_price,int* price,int* weight)
+static void swap(int i,int j,double* per_price,int* price,int* weight)
 {
     double temp=per_price[i];
     per_price[i]=per_price[j];
@@ -18,7 +18,7 @@ void swap(int i,int j,double* per_price,int* price,int* weight)
 
 //sift the element down inside the min-heap stored in per_price[base..base+size-1]
 
-void sift_down(int base,int size,int root,double* per_price,int* price,int* weight)
+static void sift_down(int base,int size,int root,double* per_price,int* price,int* weight)
 {
     while (1)
     {
@@ -40,7 +40,7 @@ void sift_down(int base,int size,int root,double* per_price,int* price,int* weig
 
 //heap sort the range [left,right] in decreasing order of per_price
 //price[] and weight[] are moved together with per_price[]
-void heap_sort(int left,int right,double* per_price,int* price,int* weight)
+static void heap_sort(int left,int right,double* per_price,int* price,int* weight)
 {
     int size=right-left+1;
 
@@ -58,7 +58,7 @@ void heap_sort(int left,int right,double* per_price,int* price,int* weight)
 
 //Upper bound of the remaining items i+1..n with capacity r: the fractional knapsack
 //Taking the fraction rounded down keeps it an upper bound, because the optimum is an integer
-int bound(int i,int r,int n,int* price,int* weight,int* Wsum,int* Psum)
+static int bound(int i,int r,int n,int* price,int* weight,int* Wsum,int* Psum)
 {
     if (r <= 0)
         return 0;
@@ -153,10 +153,11 @@ int dpbound(int n,int c,int* price,int*weight)
         int keep=0;
         for (int k=1;k<=lenM;k++)
         {
-            //every state is a feasible solution, it can improve the incumbent
+            //improve the incumbent if it exceed the current optimal
             if (L[k].price > z)
                 z=L[k].price;
 
+            //check whether it's possible to reach the current optimal solution
             if (L[k].price+bound(i,c-L[k].weight,n,price,weight,Wsum,Psum) > z)
                 L[++keep]=L[k];
         }

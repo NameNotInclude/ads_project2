@@ -1,0 +1,1 @@
+gcc main.c method/base.c method/dominance.c method/bounding.c -o main
